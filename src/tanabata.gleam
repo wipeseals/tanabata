@@ -378,7 +378,7 @@ pub fn run_bfvm(vm: BfVm, limit_cyc: Int) -> Result(BfVm, BfVmIrq) {
 pub fn main() -> Nil {
   let src =
     "
-    .+[.+]
+++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.
     "
   let stdin = ""
   let limit_cyc = 100_000
