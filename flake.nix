@@ -13,6 +13,7 @@
             buildInputs = [
                 pkgs.gleam
                 pkgs.erlang
+                pkgs.deno
             ];
         };
     });
