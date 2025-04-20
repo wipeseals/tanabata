@@ -109,7 +109,7 @@ fn find_matching_bracket(
 
 pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
   // check if the pointer is out of bounds
-  let mem = case vm.ptr >= list.length(vm.mem) {
+  let expand_mem = case vm.ptr >= list.length(vm.mem) {
     True -> list.append(vm.mem, [0])
     False -> vm.mem
   }
@@ -131,7 +131,7 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
             vm.ptr + 1,
             vm.stdin,
             vm.stdout,
-            mem,
+            expand_mem,
           ))
         // decrement pointer
         "<" -> {
@@ -147,18 +147,18 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
                 vm.ptr - 1,
                 vm.stdin,
                 vm.stdout,
-                mem,
+                expand_mem,
               ))
           }
         }
         // increment memory
         "+" -> {
-          let assert Ok(curr) = list.drop(mem, vm.ptr) |> list.first
+          let assert Ok(curr) = list.drop(expand_mem, vm.ptr) |> list.first
           let new_mem =
             list.flatten([
-              list.take(mem, vm.ptr),
+              list.take(expand_mem, vm.ptr),
               [curr + 1],
-              list.drop(mem, vm.ptr + 1),
+              list.drop(expand_mem, vm.ptr + 1),
             ])
           Ok(BfVm(
             vm.code,
@@ -173,12 +173,12 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
 
         // decrement memory
         "-" -> {
-          let assert Ok(curr) = list.drop(mem, vm.ptr) |> list.first
+          let assert Ok(curr) = list.drop(expand_mem, vm.ptr) |> list.first
           let new_mem =
             list.flatten([
-              list.take(mem, vm.ptr),
+              list.take(expand_mem, vm.ptr),
               [curr - 1],
-              list.drop(mem, vm.ptr + 1),
+              list.drop(expand_mem, vm.ptr + 1),
             ])
           Ok(BfVm(
             vm.code,
@@ -192,7 +192,7 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
         }
         // branch if zero
         "[" -> {
-          let assert Ok(curr) = list.drop(mem, vm.ptr) |> list.first |> io.debug
+          let assert Ok(curr) = list.drop(expand_mem, vm.ptr) |> list.first
           // check if the current memory is zero
           case curr == 0 {
             // if not zero, continue
@@ -204,7 +204,7 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
                 vm.ptr,
                 vm.stdin,
                 vm.stdout,
-                mem,
+                expand_mem,
               ))
             // if zero, skip to the matching ]
             True -> {
@@ -220,7 +220,7 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
                     vm.ptr,
                     vm.stdin,
                     vm.stdout,
-                    mem,
+                    expand_mem,
                   ))
                 }
               }
@@ -241,13 +241,13 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
                 vm.ptr,
                 vm.stdin,
                 vm.stdout,
-                mem,
+                expand_mem,
               ))
             }
           }
         }
         "." -> {
-          let assert Ok(c) = list.drop(mem, vm.ptr) |> list.first
+          let assert Ok(c) = list.drop(expand_mem, vm.ptr) |> list.first
           let assert Ok(c) = string.utf_codepoint(c)
           let c = string.from_utf_codepoints([c])
           let new_stdout = string.append(vm.stdout, c)
@@ -258,7 +258,7 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
             vm.ptr,
             vm.stdin,
             new_stdout,
-            mem,
+            expand_mem,
           ))
         }
         "," -> {
@@ -274,9 +274,9 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
               let new_stdin = string.slice(vm.stdin, 1, string.length(vm.stdin))
               let new_mem =
                 list.flatten([
-                  list.take(mem, vm.ptr),
+                  list.take(expand_mem, vm.ptr),
                   [c],
-                  list.drop(mem, vm.ptr + 1),
+                  list.drop(expand_mem, vm.ptr + 1),
                 ])
               Ok(BfVm(
                 vm.code,
@@ -299,46 +299,70 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
 }
 
 pub fn run_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
-  to_string(vm) |> io.println
+  // to_string(vm) |> io.println
   case step_bfvm(vm) {
     Error(Halt(_)) -> {
       Ok(vm)
     }
-    Error(PointerUnderflow(_)) -> {
-      todo
+    Error(PointerUnderflow(pc)) -> {
+      io.println(string.append(
+        "Error: Pointer underflow at pc: ",
+        int.to_string(pc),
+      ))
+      panic
     }
-    Error(Unimplemented(_, _)) -> {
-      todo
+    Error(Unimplemented(pc, cmd)) -> {
+      io.println(
+        string.append("Error: Unimplemented command '", cmd)
+        <> string.append("' at pc: ", int.to_string(pc)),
+      )
+      panic
     }
-    Error(PointerOverflow(_)) -> {
-      todo
+    Error(PointerOverflow(pc)) -> {
+      io.println(string.append(
+        "Error: Pointer overflow at pc: ",
+        int.to_string(pc),
+      ))
+      panic
     }
-    Error(StdinEmpty(_)) -> {
-      todo
+    Error(StdinEmpty(pc)) -> {
+      io.println(string.append("Error: Stdin empty at pc: ", int.to_string(pc)))
+      panic
     }
-    Error(IllegalBranch(_)) -> {
-      todo
+    Error(IllegalBranch(pc)) -> {
+      io.println(string.append(
+        "Error: Illegal branch at pc: ",
+        int.to_string(pc),
+      ))
+      panic
     }
-    Error(Other(_, _)) -> {
-      todo
+    Error(Other(pc, cmd)) -> {
+      io.println(
+        string.append("Error: Other error with command '", cmd)
+        <> string.append("' at pc: ", int.to_string(pc)),
+      )
+      panic
     }
     Ok(new_vm) -> run_bfvm(new_vm)
   }
 }
 
 pub fn main() -> Nil {
-  let hello =
+  let src =
     "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++."
-  let vm = create_bfvm(hello, "")
+  let stdin = ""
+  io.println("src: " <> src)
+  io.println("stdin: " <> stdin)
+
+  let vm = create_bfvm(src, "")
   let result = run_bfvm(vm)
   case result {
     Error(_) -> {
       io.println("Error")
     }
     Ok(vm) -> {
-      io.println(vm.stdout)
+      io.println("stdout: " <> vm.stdout)
+      io.println("vmstat: " <> to_string(vm))
     }
   }
-  io.println("Hello, Tanabata!")
-  io.println("Tanabata is a Brainfuck interpreter written in Gleam.")
 }
