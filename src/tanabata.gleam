@@ -157,7 +157,12 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
           let new_mem =
             list.flatten([
               list.take(expand_mem, vm.ptr),
-              [curr + 1],
+              [
+                case curr + 1 {
+                  256 -> 0
+                  _ -> curr + 1
+                },
+              ],
               list.drop(expand_mem, vm.ptr + 1),
             ])
           Ok(BfVm(
@@ -177,7 +182,12 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
           let new_mem =
             list.flatten([
               list.take(expand_mem, vm.ptr),
-              [curr - 1],
+              [
+                case curr - 1 {
+                  -1 -> 255
+                  _ -> curr - 1
+                },
+              ],
               list.drop(expand_mem, vm.ptr + 1),
             ])
           Ok(BfVm(
@@ -248,8 +258,10 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
         }
         "." -> {
           let assert Ok(c) = list.drop(expand_mem, vm.ptr) |> list.first
-          let assert Ok(c) = string.utf_codepoint(c)
-          let c = string.from_utf_codepoints([c])
+          let c = case string.utf_codepoint(c) {
+            Ok(c) -> string.from_utf_codepoints([c])
+            Error(_) -> ""
+          }
           let new_stdout = string.append(vm.stdout, c)
           Ok(BfVm(
             vm.code,
@@ -298,7 +310,7 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
   }
 }
 
-pub fn run_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
+pub fn run_bfvm(vm: BfVm, limit_cyc: Int) -> Result(BfVm, BfVmIrq) {
   // to_string(vm) |> io.println
   case step_bfvm(vm) {
     Error(Halt(_)) -> {
@@ -309,6 +321,7 @@ pub fn run_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
         "Error: Pointer underflow at pc: ",
         int.to_string(pc),
       ))
+      io.println("vmstat: " <> to_string(vm))
       panic
     }
     Error(Unimplemented(pc, cmd)) -> {
@@ -316,6 +329,7 @@ pub fn run_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
         string.append("Error: Unimplemented command '", cmd)
         <> string.append("' at pc: ", int.to_string(pc)),
       )
+      io.println("vmstat: " <> to_string(vm))
       panic
     }
     Error(PointerOverflow(pc)) -> {
@@ -323,10 +337,12 @@ pub fn run_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
         "Error: Pointer overflow at pc: ",
         int.to_string(pc),
       ))
+      io.println("vmstat: " <> to_string(vm))
       panic
     }
     Error(StdinEmpty(pc)) -> {
       io.println(string.append("Error: Stdin empty at pc: ", int.to_string(pc)))
+      io.println("vmstat: " <> to_string(vm))
       panic
     }
     Error(IllegalBranch(pc)) -> {
@@ -334,6 +350,7 @@ pub fn run_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
         "Error: Illegal branch at pc: ",
         int.to_string(pc),
       ))
+      io.println("vmstat: " <> to_string(vm))
       panic
     }
     Error(Other(pc, cmd)) -> {
@@ -341,21 +358,35 @@ pub fn run_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
         string.append("Error: Other error with command '", cmd)
         <> string.append("' at pc: ", int.to_string(pc)),
       )
+      io.println("vmstat: " <> to_string(vm))
       panic
     }
-    Ok(new_vm) -> run_bfvm(new_vm)
+    Ok(new_vm) ->
+      case new_vm.cycle >= limit_cyc {
+        True -> {
+          io.println("Error: Cycle limit exceeded")
+          io.println("vmstat: " <> to_string(new_vm))
+          panic
+        }
+        False -> {
+          run_bfvm(new_vm, limit_cyc)
+        }
+      }
   }
 }
 
 pub fn main() -> Nil {
   let src =
-    "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++."
+    "
+    .+[.+]
+    "
   let stdin = ""
+  let limit_cyc = 100_000
   io.println("src: " <> src)
   io.println("stdin: " <> stdin)
 
   let vm = create_bfvm(src, "")
-  let result = run_bfvm(vm)
+  let result = run_bfvm(vm, limit_cyc)
   case result {
     Error(_) -> {
       io.println("Error")
