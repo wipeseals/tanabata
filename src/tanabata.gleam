@@ -22,12 +22,26 @@ pub fn to_string(vm: BfVm) -> String {
   let cycle_str = string.append("cycle: ", int.to_string(cycle))
   let pc_str = string.append("pc: ", int.to_string(pc))
   let ptr_str = string.append("ptr: ", int.to_string(ptr))
+
+  let ptr_value_str = case list.first(list.drop(mem, ptr)) {
+    Ok(ptr_value) -> string.append("ptr_value: ", int.to_string(ptr_value))
+    Error(_) -> string.append("ptr_value: ", "0")
+  }
   let stdin_str = string.append("stdin: ", stdin)
   let stdout_str = string.append("stdout: ", stdout)
   let mem_str =
     string.append("mem: ", list.map(mem, int.to_string) |> string.join(", "))
   string.join(
-    [cmd_str, cycle_str, pc_str, ptr_str, stdin_str, stdout_str, mem_str],
+    [
+      cmd_str,
+      cycle_str,
+      pc_str,
+      ptr_str,
+      ptr_value_str,
+      stdin_str,
+      stdout_str,
+      mem_str,
+    ],
     ", ",
   )
 }
@@ -61,9 +75,9 @@ fn find_matching_bracket(
   pc: Int,
   depth: Int,
 ) -> Result(Int, FindBrError) {
-  // incremental: [ -> ], decrement: ] -> [
-  let depth_inc_target = target
-  let depth_dec_target = case target {
+  // incremental: [ -> *]*, decrement: ] -> *[*
+  let depth_dec_target = target
+  let depth_inc_target = case target {
     "[" -> "]"
     "]" -> "["
     _ -> panic as "Invalid target"
@@ -178,7 +192,7 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
         }
         // branch if zero
         "[" -> {
-          let assert Ok(curr) = list.drop(mem, vm.ptr) |> list.first
+          let assert Ok(curr) = list.drop(mem, vm.ptr) |> list.first |> io.debug
           // check if the current memory is zero
           case curr == 0 {
             // if not zero, continue
@@ -194,15 +208,15 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
               ))
             // if zero, skip to the matching ]
             True -> {
-              case find_matching_bracket("]", vm.code, vm.pc, 0) {
+              case find_matching_bracket("]", vm.code, vm.pc + 1, 0) {
                 Error(UnmatchedBracket) -> {
                   Error(IllegalBranch(vm.pc))
                 }
-                Ok(pc) -> {
+                Ok(jump_pc) -> {
                   Ok(BfVm(
                     vm.code,
                     vm.cycle + 1,
-                    pc + 1,
+                    jump_pc + 1,
                     vm.ptr,
                     vm.stdin,
                     vm.stdout,
@@ -215,37 +229,20 @@ pub fn step_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
         }
         // branch if not zero
         "]" -> {
-          let assert Ok(curr) = list.drop(mem, vm.ptr) |> list.first
-          case curr == 0 {
-            // if zero, continue
-            True ->
+          case find_matching_bracket("[", vm.code, vm.pc - 1, 0) {
+            Error(UnmatchedBracket) -> {
+              Error(IllegalBranch(vm.pc))
+            }
+            Ok(jump_pc) -> {
               Ok(BfVm(
                 vm.code,
                 vm.cycle + 1,
-                vm.pc + 1,
+                jump_pc,
                 vm.ptr,
                 vm.stdin,
                 vm.stdout,
                 mem,
               ))
-            // if not zero, skip to the matching [
-            False -> {
-              case find_matching_bracket("[", vm.code, vm.pc, 0) {
-                Error(UnmatchedBracket) -> {
-                  Error(IllegalBranch(vm.pc))
-                }
-                Ok(pc) -> {
-                  Ok(BfVm(
-                    vm.code,
-                    vm.cycle + 1,
-                    pc + 1,
-                    vm.ptr,
-                    vm.stdin,
-                    vm.stdout,
-                    mem,
-                  ))
-                }
-              }
             }
           }
         }
@@ -325,9 +322,7 @@ pub fn run_bfvm(vm: BfVm) -> Result(BfVm, BfVmIrq) {
     Error(Other(_, _)) -> {
       todo
     }
-    Ok(new_vm) -> {
-      run_bfvm(new_vm)
-    }
+    Ok(new_vm) -> run_bfvm(new_vm)
   }
 }
 
